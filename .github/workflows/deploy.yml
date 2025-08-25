@@ -1,0 +1,76 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+      - 'feature/*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install AWS CLI
+        run: pip install awscli
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Determine environment suffix
+        id: env
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          if [[ "$BRANCH" == main || "$BRANCH" == master ]]; then
+            echo "suffix=" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH" == dev ]]; then
+            echo "suffix=-uat" >> $GITHUB_OUTPUT
+          else
+            echo "suffix=-test" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Package and deploy lambdas
+        run: |
+          for dir in */ ; do
+            if [ -f "$dir/app.py" ]; then
+              LAMBDA_NAME="${dir%/}${{ steps.env.outputs.suffix }}"
+              ZIP_FILE="${dir%/}.zip"
+
+              echo "Deploying $LAMBDA_NAME ..."
+
+              # Create deployment package
+              cd $dir
+              zip -r ../$ZIP_FILE ./*
+              cd ..
+
+              # Check if Lambda exists
+              if aws lambda get-function --function-name "$LAMBDA_NAME" >/dev/null 2>&1; then
+                echo "Updating existing Lambda $LAMBDA_NAME"
+                aws lambda update-function-code \
+                  --function-name "$LAMBDA_NAME" \
+                  --zip-file fileb://$ZIP_FILE
+              else
+                echo "Creating new Lambda $LAMBDA_NAME"
+                aws lambda create-function \
+                  --function-name "$LAMBDA_NAME" \
+                  --runtime python3.11 \
+                  --role 
+                  arn:aws:iam::353687113079:role/github-lambda-deploy-role \
+                  --handler app.lambda_handler \
+                  --zip-file fileb://$ZIP_FILE
+              fi
+            fi
+          done
