@@ -67,7 +67,7 @@ jobs:
                 aws lambda create-function \
                   --function-name "$LAMBDA_NAME" \
                   --runtime python3.11 \
-                  --role arn:aws:iam::353687113079:role/github-lambda-deploy-role \
+                  --role arn:aws:iam::353687113079:role/github-actions-lambda \
                   --handler app.lambda_handler \
                   --zip-file fileb://$ZIP_FILE
               fi
